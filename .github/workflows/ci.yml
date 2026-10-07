@@ -313,7 +313,7 @@ jobs:
 
   publish-cli:
     name: publish-cli
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.repository == 'remorses/gpuix' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -349,6 +349,7 @@ jobs:
 
   publish:
     name: publish
+    if: github.repository == 'remorses/gpuix'
     runs-on: ubuntu-latest
     needs:
       - build

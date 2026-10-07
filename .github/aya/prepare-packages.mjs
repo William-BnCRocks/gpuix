@@ -15,7 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const version = process.argv[2];
-if (!version || !/^\d+\.\d+\.\d+-aya\.\d+$/.test(version)) {
+if (!version || !/^\d+\.\d+\.\d+-aya\.(0|[1-9]\d*)$/.test(version)) {
   console.error(`usage: prepare-packages.mjs <x.y.z-aya.N>, got "${version}"`);
   process.exit(1);
 }

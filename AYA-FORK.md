@@ -6,19 +6,21 @@ land upstream, without publishing anything to npm under the `@gpuix` scope. The
 fork never publishes to a registry. It attaches `npm pack` tarballs to GitHub
 Releases instead.
 
-The code is Apache-2.0, like upstream. Changes meant for upstream are sent
-upstream as pull requests; see upstream's `AGENTS.md` for who may open them.
+The code is Apache-2.0, like upstream. Changes meant for upstream are offered there as issues that link the topic
+branch, following upstream's `AGENTS.md`.
 
 ## Branches
 
 | Branch | Content |
 | --- | --- |
-| `main` | A mirror of upstream `main`. Nothing is built or released from it, and it is never pushed to by hand. |
+| `main` | A mirror of upstream `main`. Releases are never cut from it, and it is never pushed to by hand. |
 | `aya` | An upstream release tag (`@gpuix/react@<version>`) plus this fork's patches. All releases are cut from here. |
 | `aya/<item>` | One topic branch per change, based on an upstream tag or on `aya`, written so that it can become an upstream pull request. They are merged into `aya` once reviewed. |
 
 To move to a newer upstream release, create the new `aya` from the new upstream
-tag and re-apply the patches (rebase or cherry-pick). The fork's own files are
+tag and re-apply the patches (rebase or cherry-pick). After moving `aya` to a new
+upstream tag, guard every `ci.yml` job that uses `secrets.`, `contents: write` or
+`id-token`. The fork's own files are
 kept small to make this easy: `AYA-FORK.md`, `.github/workflows/aya-release.yml`,
 `.github/aya/`, and two `if:` lines in `.github/workflows/ci.yml` that skip the
 upstream publish jobs outside `remorses/gpuix`.
@@ -46,6 +48,9 @@ To cut a release, from the `aya` branch:
 2. Or start the `aya-release` workflow by hand with `N` as input (and the macOS
    switch, which is off by default). GitHub only lists a manually started workflow
    when its file is on the default branch, so use the tag when that is not the case.
+
+macOS is built when the `macos` input is true, or, for tag pushes, when the
+repository variable `AYA_RELEASE_MACOS` is `true`. Otherwise it is off.
 
 The workflow builds each platform, packs the tarballs, installs them into an empty
 project on each operating system and loads them (on Windows and macOS it also

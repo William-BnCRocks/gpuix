@@ -36,14 +36,16 @@ jobs:
   # Works out the version, the tag and the build matrix.
   plan:
     name: plan
-    if: github.repository_owner != 'remorses' && github.ref != 'refs/heads/main'
+    if: github.repository_owner != 'remorses' && (github.event_name == 'push' || github.ref == 'refs/heads/aya')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.plan.outputs.tag }}
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Plan
         id: plan
@@ -52,7 +54,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           SUFFIX: ${{ inputs.suffix }}
-          WITH_MACOS: ${{ inputs.macos }}
+          WITH_MACOS: ${{ inputs.macos || vars.AYA_RELEASE_MACOS }}
         run: |
           set -euo pipefail
           base=$(node -p "require('./packages/native/package.json').version")
@@ -60,15 +62,15 @@ jobs:
             tag="$REF_NAME"
             version="${tag#aya-v}"
           else
-            if ! [[ "$SUFFIX" =~ ^[0-9]+$ ]]; then
-              echo "suffix must be a number, got '$SUFFIX'" >&2
+            if ! [[ "$SUFFIX" =~ ^(0|[1-9][0-9]*)$ ]]; then
+              echo "suffix must be a number without leading zeros, got '$SUFFIX'" >&2
               exit 1
             fi
             version="${base}-aya.${SUFFIX}"
             tag="aya-v${version}"
           fi
           number="${version#"${base}-aya."}"
-          if [ "$number" = "$version" ] || ! [[ "$number" =~ ^[0-9]+$ ]]; then
+          if [ "$number" = "$version" ] || ! [[ "$number" =~ ^(0|[1-9][0-9]*)$ ]]; then
             echo "version '$version' must look like ${base}-aya.N" >&2
             exit 1
           fi
@@ -95,7 +97,7 @@ jobs:
   build:
     name: build - ${{ matrix.target }}
     needs: plan
-    if: github.repository_owner != 'remorses' && github.ref != 'refs/heads/main'
+    if: github.repository_owner != 'remorses' && (github.event_name == 'push' || github.ref == 'refs/heads/aya')
     strategy:
       fail-fast: true
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -104,16 +106,17 @@ jobs:
       run:
         working-directory: packages/native
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
+          persist-credentials: false
 
       - name: Setup bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
       # Reads the channel from rust-toolchain.toml.
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
         with:
           target: ${{ matrix.target }}
           cache: false
@@ -124,7 +127,7 @@ jobs:
         run: xcodebuild -downloadComponent MetalToolchain
 
       - name: Cache cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/.cargo/registry
@@ -162,7 +165,7 @@ jobs:
           CARGO_BUILD_TARGET: ${{ matrix.target }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: aya-bindings-${{ matrix.target }}
           path: packages/native/${{ env.APP_NAME }}.*.node
@@ -174,35 +177,45 @@ jobs:
     needs:
       - plan
       - build
-    if: github.repository_owner != 'remorses' && github.ref != 'refs/heads/main'
+    if: github.repository_owner != 'remorses' && (github.event_name == 'push' || github.ref == 'refs/heads/aya')
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.plan.outputs.version }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
 
       - name: Setup bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
       - name: Install dependencies
         run: bun install
 
       - name: Download native artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: aya-bindings-*
           path: packages/native/artifacts
 
+      # `napi artifacts` fails when a configured target has no binary, so list
+      # only the targets this run built.
+      - name: Narrow napi targets to this run
+        working-directory: packages/native
+        env:
+          MATRIX: ${{ needs.plan.outputs.matrix }}
+        run: node ../../.github/aya/narrow-targets.mjs
+
       - name: Create npm dirs and move artifacts
         working-directory: packages/native
         run: |
-          bunx napi create-npm-dirs
-          bunx napi artifacts
+          bunx @napi-rs/cli create-npm-dirs
+          bunx @napi-rs/cli artifacts
 
       # The packages ship the compiled TypeScript in `dist`.
       - name: Build TypeScript
@@ -225,7 +238,7 @@ jobs:
           ls -l aya-dist
 
       - name: Upload tarballs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: aya-tarballs
           path: aya-dist/*.tgz
@@ -237,7 +250,7 @@ jobs:
     needs:
       - plan
       - pack
-    if: github.repository_owner != 'remorses' && github.ref != 'refs/heads/main'
+    if: github.repository_owner != 'remorses' && (github.event_name == 'push' || github.ref == 'refs/heads/aya')
     strategy:
       fail-fast: true
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -247,15 +260,17 @@ jobs:
       RENDERER_FLAG: ${{ matrix.renderer && '--expect-test-renderer' || '' }}
     steps:
       # Only for the helper scripts. The smoke project below does not use this tree.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
 
       - name: Setup bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
       # Libraries the Linux binding loads at run time.
       - name: Install Linux dependencies
@@ -271,7 +286,7 @@ jobs:
             libvulkan1
 
       - name: Download tarballs
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: aya-tarballs
           path: ${{ runner.temp }}/smoke
@@ -306,17 +321,16 @@ jobs:
     needs:
       - plan
       - smoke
-    if: github.repository_owner != 'remorses' && github.ref != 'refs/heads/main'
+    if: github.repository_owner != 'remorses' && (github.event_name == 'push' || github.ref == 'refs/heads/aya')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       VERSION: ${{ needs.plan.outputs.version }}
       TAG: ${{ needs.plan.outputs.tag }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Download tarballs
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: aya-tarballs
           path: aya-dist
@@ -329,6 +343,8 @@ jobs:
 
       # Fails when the release already exists. Delete it or pick a new N.
       - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "$TAG" aya-dist/*.tgz aya-dist/SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" \
